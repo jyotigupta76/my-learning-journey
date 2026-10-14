@@ -1,9 +1,13 @@
+
 package com.security.demo;
 
+import javax.sql.DataSource;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.ProviderManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -13,63 +17,71 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
-
-
-
-import javax.sql.DataSource;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
-@EnableWebSecurity  //Enable security
+@EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    @Autowired
-    DataSource dataSource;
-
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http)
-            throws Exception {
-        http.authorizeHttpRequests(authorizeRequests ->
-                authorizeRequests.requestMatchers("/admin/**").hasRole("ADMIN")
-                                .requestMatchers("/user/**").hasAnyRole("USER", "ADMIN")
-                .anyRequest().authenticated());
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            AuthTokenFilter authTokenFilter) throws Exception {
+
+        http.csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/signin").permitAll()
+                        .requestMatchers("/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/user/**").hasAnyRole("USER", "ADMIN")
+                        .anyRequest().authenticated()
+                );
+
         http.httpBasic(Customizer.withDefaults());
+
+        http.addFilterBefore(
+                authTokenFilter,
+                UsernamePasswordAuthenticationFilter.class
+        );
+
         return http.build();
     }
 
-    //UserDetailsService is used by Spring Security to load user details during authentication.
-    // User details can come from a database, in-memory storage, or another custom source, depending on the application's requirements and implementation.
-
     @Bean
-    public UserDetailsService userDetailsService() {
+    public UserDetailsService userDetailsService(DataSource dataSource) {
+        JdbcUserDetailsManager manager =
+                new JdbcUserDetailsManager(dataSource);
 
-        UserDetails user1 = User.withUsername("user1")
-//                .password("{noop}password1")
-                .password(passwordEncoder().encode("password1"))
-                .roles("USER")
-                .build();
+        if (!manager.userExists("user1")) {
+            UserDetails user1 = User.withUsername("user1")
+                    .password(passwordEncoder().encode("password1"))
+                    .roles("USER")
+                    .build();
 
-        UserDetails user2 = User.withUsername("user2")
-                .password(passwordEncoder().encode("password2"))
-                .roles("USER")
-                .build();
+            manager.createUser(user1);
+        }
 
-        UserDetails admin = User.withUsername("admin1")
-                .password(passwordEncoder().encode("admin1"))
-                .roles("ADMIN")
-                .build();
+        if (!manager.userExists("user2")) {
+            UserDetails user2 = User.withUsername("user2")
+                    .password(passwordEncoder().encode("password2"))
+                    .roles("USER")
+                    .build();
 
-//        return new InMemoryUserDetailsManager(user1, user2, admin);
+            manager.createUser(user2);
+        }
 
-        JdbcUserDetailsManager userDetailsManager = new JdbcUserDetailsManager(dataSource);
-        userDetailsManager.createUser(user1);
-        userDetailsManager.createUser(user2);
-        userDetailsManager.createUser(admin);
-        return userDetailsManager;
+        if (!manager.userExists("admin1")) {
+            UserDetails admin = User.withUsername("admin1")
+                    .password(passwordEncoder().encode("admin1"))
+                    .roles("ADMIN")
+                    .build();
 
+            manager.createUser(admin);
+        }
+
+        return manager;
     }
 
     @Bean
@@ -77,4 +89,16 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    @Bean
+    public AuthenticationManager authenticationManager(
+            UserDetailsService userDetailsService,
+            PasswordEncoder passwordEncoder) {
+
+        DaoAuthenticationProvider provider =
+                new DaoAuthenticationProvider(userDetailsService);
+
+        provider.setPasswordEncoder(passwordEncoder);
+
+        return new ProviderManager(provider);
+    }
 }

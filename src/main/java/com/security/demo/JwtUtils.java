@@ -1,0 +1,63 @@
+package com.security.demo;
+
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoder;
+import io.jsonwebtoken.security.Keys;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.SecretKey;
+import java.security.Key;
+import java.util.Base64;
+import java.util.Date;
+
+ @Component
+public class JwtUtils {
+    private String jwtSecret = "YS1zdHJpbmctc2VjcmV0LWF0LWxlYXN0LTI1Ni1iaXRzLWxvbmc=";
+    private int jwtExpiration = 172800000;
+
+    public String getJwtHeader(){
+        return " ";
+    }
+
+    public String generateTokenFromUsername(String username) {
+        return Jwts.builder()
+                .subject(username)
+                .issuedAt(new Date())
+                .expiration(new Date(new Date().getTime() + jwtExpiration))
+                .signWith(key())
+                .compact();
+    }
+
+
+    public boolean validateJwtToken(String jwtToken) {
+        try {
+            Jwts.parser().verifyWith((SecretKey) key())
+                    .build().parseClaimsJws(jwtToken);
+        }catch (Exception e){
+            e.printStackTrace();
+            return false;
+        }
+        return true;
+    }
+
+    private Key key() {
+        byte[] keyBytes = Base64.getDecoder().decode(jwtSecret);
+        return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+     public String getJwtFromHeader(HttpServletRequest request) {
+        String bearerToken = request.getHeader("Authorization");
+        if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+            return bearerToken.substring(7);
+        }
+         return null;
+     }
+
+     public String getUsernameFromToken(String jwt) {
+        return Jwts.parser().verifyWith((SecretKey)  key())
+                .build().parseSignedClaims(jwt)
+                .getPayload().getSubject();
+     }
+ }
